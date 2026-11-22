@@ -25,7 +25,7 @@ function memberCard(handoff, member) {
   const retired = member.revision !== member.point_revision;
   const writable = !handoff.closed_at && !member.outcome && (retired ? canApprove() : canEdit() && !member.pending_location);
   return `<article class="workflow-member"><header><div><strong>${text(member.name)}</strong><small>${code(member.code)} · V${member.point_revision} · ${labelSlot(member.focus_slot)}</small></div>${taskLink(member.task_id)}</header>
-    <p>复测改善 / 目标 ${verdict(member.result)}</p>
+    <p>复测改善 / 目标 ${member.result ? verdict(member.result) : '结论已剔除，待补测'}</p>
     ${member.outcome ? `<div class="workflow-record"><strong>${member.outcome === 'relocated' ? '旧址停止' : '已执行'}${member.event_day > handoff.due_day ? ' · 超期' : ''}</strong><p>${text(member.note)}</p><small>${member.event_day} · ${text(member.recorded_by)}</small></div>` : ''}
     ${!member.outcome && retired ? '<p class="aside-note">点位已迁移，待运营确认旧址停止。</p>' : ''}
     ${!member.outcome && member.pending_location ? '<p class="aside-note">迁移待核，暂停现场执行。</p>' : ''}

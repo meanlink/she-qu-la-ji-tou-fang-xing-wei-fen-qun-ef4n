@@ -1,17 +1,49 @@
-import {canApprove, canEdit, state, taskById} from '../state.js';
+import {canApprove, canEdit, labels, state, taskById} from '../state.js';
 import {badge, code, empty, formError, goalAction, goalLabel, input, labelSlot, note, paneHead, pct, stat, text, today} from '../ui.js';
+
+const reviewStates = {pending: '复核中', retained: '裁定保留', excluded: '剔除补测'};
+const conclusion = (stateValue, result) =>
+  `${labels[stateValue] ?? stateValue} · 改善 ${result.gain_pp.toFixed(1)} / 目标 ${result.target_pp.toFixed(0)} 个百分点`;
+
+function reviewPanel(task) {
+  const reviews = task.reviews ?? [];
+  const pending = reviews.find(review => review.state === 'pending');
+  const parts = [];
+  if (pending) {
+    parts.push(`<div class="move-note">复测复核中 · 结论恢复前，该点位暂停整改交接。</div>
+      <div class="workflow-record"><strong>计数异议</strong><p>${text(pending.note)}</p><small>提单人 ${text(pending.submitted_by)}</small></div>`);
+    if (canApprove() && state.staff.username !== pending.submitted_by) {
+      parts.push(`<form data-action="decide-retest-review" data-id="${pending.id}">
+        ${note('裁定说明', '保留则恢复原结论；剔除须写明剔除原因，之后改约同址同段补测')}${formError}
+        <div class="input-pair"><button name="decision" value="retained">保留原结论</button><button name="decision" value="excluded">剔除并改约补测</button></div></form>`);
+    } else {
+      parts.push('<p class="aside-note">待另一名运营账号裁定。</p>');
+    }
+  } else if (['improved', 'followup'].includes(task.state) && task.result && canEdit()) {
+    parts.push(`<form data-action="submit-retest-review" data-id="${task.id}">
+      ${note('计数异议说明', '记录已归档复测计数有误的依据')}${formError}<button>提交复测复核</button></form>`);
+  }
+  if (reviews.length) {
+    parts.push(`<h3>复核记录</h3>${reviews.map(review => `<div class="workflow-record"><strong>${reviewStates[review.state] ?? review.state}</strong>
+      <p>异议：${text(review.note)}</p><p>原结论：${conclusion(review.original_state, review.original_result)}</p>
+      ${review.decision_note ? `<p>${review.state === 'excluded' ? '剔除原因' : '裁定说明'}：${text(review.decision_note)} · ${text(review.decided_by)}</p>` : ''}
+      ${review.final_result ? `<p>补测后的结论：${conclusion(review.final_state, review.final_result)}</p>` : ''}</div>`).join('')}`);
+  }
+  return parts.join('');
+}
 
 function taskDetail(task) {
   if (!task) return empty('运营确认分群后，达到宣教条件的点位会出现在任务队列。');
   const baseline = task.baseline[task.goal === 'accuracy' ? 'correct' : 'overflow'] / task.baseline.total;
   const asOf = task.delivered_day ?? today();
+  const reviewing = (task.reviews ?? []).some(review => review.state === 'pending');
   return `<div class="run-head">${paneHead(task.point_name, `任务 #${task.id} · 分群 #${task.run_id} / G${task.cohort} · 地址 V${task.point_revision}`)}${badge(task.state)}</div>
     <div class="assignment"><h3>${goalLabel(task.goal)} · ${labelSlot(task.focus_slot)}</h3><p>${goalAction(task.goal)}。</p></div>
     <div class="comparison"><div><span>基线 · ${task.baseline.total} 次观察</span><strong>${pct(baseline)}</strong></div>
     <div><span>复测 · ${task.retest_total} 次观察</span><strong>${task.result ? pct(task.result.retest_rate) : '未评估'}</strong></div></div>
     ${task.result ? `<p class="verdict">改善 ${task.result.gain_pp.toFixed(1)} 个百分点 · 目标 ${task.result.target_pp.toFixed(0)} 个百分点。${text(task.review_note)}</p>` : ''}
     ${task.state === 'retesting' ? `<p><a class="quiet-link" href="#appointments?task=${task.id}">安排同址复测 →</a></p>` : ''}
-    ${task.state === 'followup' ? `<p><a class="quiet-link" href="#handoffs?task=${task.id}">查看群组整改 →</a></p>` : ''}
+    ${task.state === 'followup' && !reviewing ? `<p><a class="quiet-link" href="#handoffs?task=${task.id}">查看群组整改 →</a></p>` : ''}
     ${task.pending_location ? '<p class="move-note">点位迁移待核，暂缓现场宣教与复测。</p>' : ''}
     ${task.state === 'assigned' && canEdit() && !task.pending_location ? `<form id="deliver-task" data-action="deliver" data-id="${task.id}">
       ${input('delivered_day', '现场宣教日期', `type="date" value="${asOf}" max="${today()}"`)}
@@ -21,7 +53,8 @@ function taskDetail(task) {
       <span>${task.retest_windows} / 2 个日期 · ${task.retest_total} / 20 次观察</span>
       ${canEdit() ? `<a href="#windows?task=${task.id}" class="quiet-link">登记同址同时段复测 →</a>` : ''}</div>
       ${canApprove() ? `<form id="review-task" data-action="review-task" data-id="${task.id}">
-        ${note('复测审核记录', '填写现场复测结果及后续安排')}${formError}<button>评估并归档复测</button></form>` : ''}` : ''}`;
+        ${note('复测审核记录', '填写现场复测结果及后续安排')}${formError}<button>评估并归档复测</button></form>` : ''}` : ''}
+    ${reviewPanel(task)}`;
 }
 
 export function tasksPage(params) {
@@ -32,6 +65,6 @@ export function tasksPage(params) {
     ${stat('已评估', tasks.filter(t => ['improved', 'followup'].includes(t.state)).length, '包含已改善与需跟进')}</div>
     <div class="split task-layout"><section class="pane">${paneHead('任务队列', '按点位查看执行进度。')}
     <ul class="task-list">${tasks.map(task => `<li><a href="#tasks?task=${task.id}" class="${selected?.id === task.id ? 'chosen' : ''}">
-      <span><strong>${text(task.point_name)}</strong><small>${code(task.code)} · ${labelSlot(task.focus_slot)}</small></span>${badge(task.state)}</a></li>`).join('')}</ul>
+      <span><strong>${text(task.point_name)}</strong><small>${code(task.code)} · ${labelSlot(task.focus_slot)}</small></span>${badge(task.state)}${(task.reviews ?? []).some(review => review.state === 'pending') ? '<span class="workflow-tag">复核中</span>' : ''}</a></li>`).join('')}</ul>
     ${!tasks.length ? empty('暂无任务。运营确认分群后将在这里显示。') : ''}</section><aside class="pane entry">${taskDetail(selected)}</aside></div>`;
 }

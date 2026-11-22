@@ -17,7 +17,9 @@ def appointment_board(task_id):
             MAX(CASE WHEN w.sample_day=a.first_day THEN w.id END) AS first_window_id,
             MAX(CASE WHEN w.sample_day=a.second_day THEN w.id END) AS second_window_id
             FROM outreach_tasks t JOIN disposal_points p ON p.id=t.point_id
-            LEFT JOIN retest_appointments a ON a.task_id=t.id LEFT JOIN sampling_windows w ON w.task_id=t.id
+            LEFT JOIN retest_appointments a ON a.task_id=t.id
+            LEFT JOIN sampling_windows w ON w.task_id=t.id
+                AND w.id NOT IN (SELECT window_id FROM retest_superseded_windows)
             WHERE t.state='retesting' OR a.task_id IS NOT NULL OR t.id=%s
             GROUP BY t.id,p.id,a.task_id ORDER BY (t.id <=> %s) DESC,t.id DESC LIMIT 160''', (task_id, task_id))
 
@@ -32,7 +34,8 @@ def save_appointment(task_id, form, actor):
                 form.second_day > task['delivered_day'] + timedelta(days=APPOINTMENT_DAYS)):
             raise HTTPException(409, '两次复测须安排在宣教后的 21 天内')
         captured = {row['sample_day'] for row in ledger.rows(
-            'SELECT sample_day FROM sampling_windows WHERE task_id=%s', (task_id,))}
+            '''SELECT sample_day FROM sampling_windows WHERE task_id=%s
+               AND id NOT IN (SELECT window_id FROM retest_superseded_windows)''', (task_id,))}
         existing = ledger.one('SELECT first_day,second_day FROM retest_appointments WHERE task_id=%s', (task_id,))
         submitted = (form.first_day, form.second_day)
         if captured and (not existing or len(captured) >= 2 or any(

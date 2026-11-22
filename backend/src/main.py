@@ -15,6 +15,7 @@ from scripts.seed_demo import seed
 from src.contracts import Delivery, Login, Note, RegisterPoint, Relocation, Role, RunRequest, Window
 from src.fieldwork import add_point, add_window, propose_move, resolve_move
 from src.outreach import deliver, review_retest
+from src.retest_reviews import attach_reviews
 from src import quality, workflow_schema
 from src.workflow_routes import router as workflow_router
 from src.runs import confirm_run, get_run, queue_run
@@ -171,11 +172,14 @@ def publish(run_id: int, form: Note, staff=Depends(operations)):
 @app.get('/tasks')
 def tasks(staff=Depends(signed_in)):
     with register() as ledger:
-        return ledger.rows('''SELECT t.*,p.code,p.name AS point_name,r.through_day,p.pending_location,
-            (SELECT COUNT(*) FROM sampling_windows w WHERE w.task_id=t.id) AS retest_windows,
-            COALESCE((SELECT SUM(w.total) FROM sampling_windows w WHERE w.task_id=t.id),0) AS retest_total
+        board = ledger.rows('''SELECT t.*,p.code,p.name AS point_name,r.through_day,p.pending_location,
+            (SELECT COUNT(*) FROM sampling_windows w WHERE w.task_id=t.id
+                AND w.id NOT IN (SELECT window_id FROM retest_superseded_windows)) AS retest_windows,
+            COALESCE((SELECT SUM(w.total) FROM sampling_windows w WHERE w.task_id=t.id
+                AND w.id NOT IN (SELECT window_id FROM retest_superseded_windows)),0) AS retest_total
             FROM outreach_tasks t JOIN disposal_points p ON p.id=t.point_id
             JOIN behavior_runs r ON r.id=t.run_id ORDER BY t.id DESC LIMIT 250''')
+        return attach_reviews(ledger, board)
 
 
 @app.post('/tasks/{task_id}/delivery')

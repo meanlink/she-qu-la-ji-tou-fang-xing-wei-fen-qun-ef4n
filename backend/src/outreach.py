@@ -28,7 +28,8 @@ def review_retest(task_id, form, actor):
         if task['state'] != TaskState.RETESTING:
             raise HTTPException(409, '仅复测中的任务可以评估')
         current_point(get_point(ledger, task['point_id']), task['point_revision'])
-        rows = ledger.rows('SELECT id,total,correct,overflow FROM sampling_windows WHERE task_id=%s ORDER BY id', (task_id,))
+        rows = ledger.rows('''SELECT id,total,correct,overflow FROM sampling_windows
+            WHERE task_id=%s AND id NOT IN (SELECT window_id FROM retest_superseded_windows) ORDER BY id''', (task_id,))
         retest = aggregate(rows)
         if retest['total'] < MIN_RETEST or len(rows) < 2:
             raise HTTPException(409, '复测至少需要两个不同日期、合计 20 次匿名观察')
@@ -43,5 +44,10 @@ def review_retest(task_id, form, actor):
                   'target_pp': float(100 * threshold), 'counts': retest, 'window_ids': [r['id'] for r in rows]}
         ledger.execute('UPDATE outreach_tasks SET state=%s,result=%s,review_note=%s WHERE id=%s',
                        (state, encode(result), form.note, task_id))
+        review = ledger.one('''SELECT id FROM retest_reviews WHERE task_id=%s AND state='excluded'
+            AND final_result IS NULL ORDER BY id DESC LIMIT 1''', (task_id,))
+        if review:
+            ledger.execute('UPDATE retest_reviews SET final_state=%s,final_result=%s,final_note=%s WHERE id=%s',
+                           (state, encode(result), form.note, review['id']))
         ledger.audit(actor, f'outreach_{state}', task_id, {'result': result, 'note': form.note})
         return get_task(ledger, task_id)

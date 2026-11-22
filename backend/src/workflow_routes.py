@@ -4,8 +4,10 @@ from src.cohort_handoffs import close_handoff, cohort_board, issue_handoff, reco
 from src.contracts import Note, Role
 from src.observation_context import decide_condition, list_conditions, report_condition
 from src.retest_appointments import appointment_board, save_appointment
+from src.retest_reviews import decide_review, submit_review
 from src.security import allow, signed_in
-from src.workflow_forms import Appointment, ConditionDecision, HandoffOutcome, IssueHandoff, ObservationCondition
+from src.workflow_forms import (Appointment, ConditionDecision, HandoffOutcome, IssueHandoff,
+                                ObservationCondition, RetestReviewDecision)
 
 router = APIRouter()
 field = allow(Role.ANALYST, Role.ADMIN)
@@ -55,3 +57,13 @@ def outcome(handoff_id: int, task_id: int, form: HandoffOutcome, staff=Depends(f
 @router.post('/cohort-handoffs/{handoff_id}/close')
 def close(handoff_id: int, form: Note, staff=Depends(operations)):
     return close_handoff(handoff_id, form, staff['username'])
+
+
+@router.post('/retest-reviews/from-task/{task_id}', status_code=201)
+def retest_review(task_id: int, form: Note, staff=Depends(field)):
+    return submit_review(task_id, form, staff['username'])
+
+
+@router.post('/retest-reviews/{review_id}/decision')
+def retest_review_decision(review_id: int, form: RetestReviewDecision, staff=Depends(operations)):
+    return decide_review(review_id, form, staff['username'])

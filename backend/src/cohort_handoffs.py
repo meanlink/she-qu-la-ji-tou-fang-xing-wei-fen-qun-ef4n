@@ -5,11 +5,13 @@ from fastapi import HTTPException
 from src.cohort_evidence import TASK_SELECT, evidence_for
 from src.contracts import Role, local_day
 from src.fieldwork import current_point, required
+from src.retest_reviews import open_review_clause, point_review_open
 from src.storage import register
 
 TACTICS = {'accuracy': {'replace_signs', 'guided_sorting'}, 'overflow': {'stagger_window', 'alternate_point'}}
-CANDIDATES = ''' WHERE t.state='followup' AND t.point_revision=p.revision AND p.pending_location IS NULL
-    AND NOT EXISTS (SELECT 1 FROM cohort_handoff_members m WHERE m.task_id=t.id)'''
+CANDIDATES = f''' WHERE t.state='followup' AND t.point_revision=p.revision AND p.pending_location IS NULL
+    AND NOT EXISTS (SELECT 1 FROM cohort_handoff_members m WHERE m.task_id=t.id)
+    AND {open_review_clause('t')}'''
 
 
 def cohort_board(task_id, handoff_id):
@@ -35,6 +37,8 @@ def issue_handoff(task_id, form, actor):
         raise HTTPException(409, '整改期限须在今天起 30 天内')
     with register(write=True) as ledger:
         anchor = required(ledger, TASK_SELECT + ' WHERE t.id=%s', task_id, '宣教任务')
+        if point_review_open(ledger, anchor['point_id']):
+            raise HTTPException(409, '该点位复测复核中，结论恢复前暂停整改交接')
         members = ledger.rows(TASK_SELECT + CANDIDATES + ' AND t.run_id=%s AND t.cohort=%s AND t.goal=%s',
                               (anchor['run_id'], anchor['cohort'], anchor['goal']))
         if not any(member['id'] == task_id for member in members):

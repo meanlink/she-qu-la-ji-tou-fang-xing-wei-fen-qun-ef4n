@@ -150,6 +150,11 @@ async function change(form, fields, submitter) {
     case 'handoff-outcome':
     case 'close-handoff':
       return api.workflowAction(form, fields);
+    case 'submit-retest-review':
+      return api.workflowAction(form, fields);
+    case 'decide-retest-review':
+      fields.decision = submitter?.value;
+      return api.workflowAction(form, fields);
     default: throw new Error('表单操作不可用');
   }
 }

@@ -17,10 +17,17 @@ export function workflowApi(call) {
         'issue-handoff': `/cohort-handoffs/from-task/${id}`,
         'handoff-outcome': `/cohort-handoffs/${id}/members/${task}`,
         'close-handoff': `/cohort-handoffs/${id}/close`,
+        'submit-retest-review': `/retest-reviews/from-task/${id}`,
+        'decide-retest-review': `/retest-reviews/${id}/decision`,
+      };
+      const messages = {
+        'submit-retest-review': '复测复核已提交，结论恢复前暂停该点位整改交接',
+        'decide-retest-review': '复核裁定已生效',
       };
       if (action === 'issue-handoff') fields.condition_window_id = Number(fields.condition_window_id) || null;
       const result = await call(routes[action], fields);
-      return {message: '工作记录已更新', location: action === 'issue-handoff' ? `#handoffs?handoff=${result.id}` : undefined};
+      return {message: messages[action] ?? '工作记录已更新',
+        location: action === 'issue-handoff' ? `#handoffs?handoff=${result.id}` : undefined};
     },
   };
 }

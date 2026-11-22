@@ -40,3 +40,7 @@ class HandoffOutcome(Note):
         if self.event_day > local_day():
             raise ValueError('现场结果日期不能在未来')
         return self
+
+
+class RetestReviewDecision(Note):
+    decision: Literal['retained', 'excluded']
